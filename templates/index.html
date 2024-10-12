@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Web Interface</title>
+</head>
+<body>
+    <h1>Text-to-Speech Web Interface</h1>
+    <label for="tts_type">Select TTS type:</label>
+    <select id="tts_type" onchange="updateTTSOptions()">
+        <option value="silero">Silero TTS</option>
+        <option value="parler">Parler TTS</option>
+    </select>
+    <br><br>
+    <div id="silero_options">
+        <label for="language">Select language:</label>
+        <select id="language" onchange="updateModels()"></select>
+        <br><br>
+        <label for="model">Select model:</label>
+        <select id="model" onchange="updateSampleRates()"></select>
+        <br><br>
+        <label for="sample_rate">Select sample rate:</label>
+        <select id="sample_rate"></select>
+        <br><br>
+        <label for="speaker">Select speaker:</label>
+        <select id="speaker"></select>
+        <br><br>
+    </div>
+    <div id="parler_options" style="display: none;">
+        <label for="description">Enter voice description:</label><br>
+        <textarea id="description" rows="4" cols="50"></textarea><br>
+    </div>
+    <label for="text">Enter text:</label><br>
+    <textarea id="text" rows="4" cols="50" required></textarea><br>
+    <button onclick="generateSpeech()">Generate Speech</button>
+    <br><br>
+    <audio id="audio-player" controls></audio>
+    <br><br>
+    <button onclick="loadExample()">Load Example</button>
+
+    <script>
+        const ws = new WebSocket("ws://" + window.location.host + "/ws");
+
+        function populateLanguages() {
+            fetch('/languages')
+                .then(response => response.json())
+                .then(data => {
+                    const languageSelect = document.getElementById('language');
+                    data.languages.forEach(lang => {
+                        const option = document.createElement('option');
+                        option.value = lang;
+                        option.textContent = lang;
+                        languageSelect.appendChild(option);
+                    });
+                    updateModels();
+                });
+        }
+
+        function updateModels() {
+            const language = document.getElementById('language').value;
+            fetch(`/models/${language}`)
+                .then(response => response.json())
+                .then(data => {
+                    const modelSelect = document.getElementById('model');
+                    modelSelect.innerHTML = '';
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelect.appendChild(option);
+                    });
+                    updateSampleRates();
+                    updateSpeakers();
+                });
+        }
+
+        function updateSampleRates() {
+            const language = document.getElementById('language').value;
+            const model = document.getElementById('model').value;
+            fetch(`/sample_rates/${language}/${model}`)
+                .then(response => response.json())
+                .then(data => {
+                    const sampleRateSelect = document.getElementById('sample_rate');
+                    sampleRateSelect.innerHTML = '';
+                    data.sample_rates.forEach(rate => {
+                        const option = document.createElement('option');
+                        option.value = rate;
+                        option.textContent = rate;
+                        sampleRateSelect.appendChild(option);
+                    });
+                });
+        }
+
+        function updateSpeakers() {
+            const language = document.getElementById('language').value;
+            const model = document.getElementById('model').value;
+            fetch(`/speakers/${language}/${model}`)
+                .then(response => response.json())
+                .then(data => {
+                    const speakerSelect = document.getElementById('speaker');
+                    speakerSelect.innerHTML = '';
+                    data.speakers.forEach(speaker => {
+                        const option = document.createElement('option');
+                        option.value = speaker;
+                        option.textContent = speaker;
+                        speakerSelect.appendChild(option);
+                    });
+                });
+        }
+
+        function updateTTSOptions() {
+            const ttsType = document.getElementById('tts_type').value;
+            if (ttsType === 'silero') {
+                document.getElementById('silero_options').style.display = 'block';
+                document.getElementById('parler_options').style.display = 'none';
+            } else {
+                document.getElementById('silero_options').style.display = 'none';
+                document.getElementById('parler_options').style.display = 'block';
+            }
+        }
+
+        function generateSpeech() {
+            const text = document.getElementById('text').value;
+            const ttsType = document.getElementById('tts_type').value;
+            let data = { text: text, tts_type: ttsType };
+
+            if (ttsType === 'silero') {
+                data.language = document.getElementById('language').value;
+                data.model_id = document.getElementById('model').value;
+                data.sample_rate = document.getElementById('sample_rate').value;
+                data.speaker = document.getElementById('speaker').value;
+            } else {
+                data.description = document.getElementById('description').value;
+            }
+
+            ws.send(JSON.stringify(data));
+        }
+
+        function loadExample() {
+            const ttsType = document.getElementById('tts_type').value;
+            if (ttsType === 'silero') {
+                const language = document.getElementById('language').value;
+                const model = document.getElementById('model').value;
+                fetch(`/example/${language}/${model}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('text').value = data.example;
+                    });
+            } else {
+                document.getElementById('text').value = "Hey, how are you doing today?";
+                document.getElementById('description').value = "Jon's voice is monotone yet slightly fast in delivery, with a very close recording that almost has no background noise.";
+            }
+        }
+
+        updateTTSOptions();
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.event === 'audio_generated') {
+                const audio = document.getElementById('audio-player');
+                audio.src = 'data:audio/wav;base64,' + data.audio;
+                audio.play();
+            } else if (data.event === 'error') {
+                alert(data.message);
+            }
+        };
+
+        populateLanguages();
+    </script>
+</body>
+</html>
